@@ -1,5 +1,5 @@
 from web.extensions import db
-from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, session, redirect
 
 mod = Blueprint('topic', __name__, url_prefix='/api/topic')
 
