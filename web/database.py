@@ -5,7 +5,7 @@ from web.extensions import db
 # --- 数据模型 ---
 class User(db.Model):
     __tablename__ = 'users'
-    pass
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
 
 class clusters(db.Model):
     __tablename__ = 'clusters'
