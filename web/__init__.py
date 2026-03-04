@@ -24,6 +24,7 @@ app.config['SCHEDULER_JOB_DEFAULTS'] = {'coalesce': True, 'max_instances': 1}
 app.config['SCHEDULER_API_ENABLED'] = False
 
 from web.views import topic
+from web.views import clusters
 
 def register_extensions(app):
     db.init_app(app)
@@ -43,6 +44,7 @@ def scheduler_init(app):
 def register_blueprints(app):
 #    app.register_blueprint(login.mod)
     app.register_blueprint(topic.mod)
+    app.register_blueprint(clusters.mod)
 
 register_extensions(app)
 register_blueprints(app)
