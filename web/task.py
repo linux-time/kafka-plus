@@ -7,6 +7,6 @@ scheduler = APScheduler()
 def job1():
     print("定时任务1执行中...")
 
-@scheduler.task('interval', id='job_test2', seconds=5)
-def job2():
-    print("定时任务执2行中...")
+#@scheduler.task('interval', id='job_test2', seconds=5)
+#def job2():
+#    print("定时任务执2行中...")
