@@ -7,15 +7,32 @@ class User(db.Model):
     __tablename__ = 'users'
     pass
 
+class clusters(db.Model):
+    __tablename__ = 'clusters'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    cluster_name = db.Column(db.String(255))
+    bootstrap_servers = db.Column(db.String(255))
+    remarks = db.Column(db.String(255))
+
 class topic_info(db.Model):
     __tablename__ = 'topic_info'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    cluster_id = db.Column(db.Integer, nullable=False)
-    topic_name = db.Column(db.String(255), nullable=False)
-    consumer_groups = db.Column(db.String(500), nullable=True)  # 存储逗号分隔的消费组列表
-    partitions = db.Column(db.Integer, nullable=False)
-    replication_factor = db.Column(db.Integer, nullable=False)
-    disk_usage_bytes = db.Column(db.Integer, nullable=True)
-    retention_ms = db.Column(db.Integer, nullable=True)
+    cluster_id = db.Column(db.Integer)
+    topic_name = db.Column(db.String(255))
+    consumer_groups = db.Column(db.String(500))  # 存储逗号分隔的消费组列表
+    partitions = db.Column(db.Integer)
+    replication_factor = db.Column(db.Integer)
+    disk_usage_bytes = db.Column(db.Integer)
+    retention_ms = db.Column(db.Integer)
     created_at = db.Column(db.Integer, default=0)
     updated_at = db.Column(db.Integer, default=0)
+    status = db.Column(db.Integer)
+    remarks = db.Column(db.String(255))
+
+class tmp_data(db.Model):
+    __tablename__ = 'tmp_data'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    data_type = db.Column(db.Integer)
+    data = db.Column(db.Text)
+    cluster_id = db.Column(db.Integer)
+    topic_id = db.Column(db.Integer)
