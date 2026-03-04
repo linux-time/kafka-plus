@@ -4,7 +4,7 @@ from confluent_kafka.admin import AdminClient, ConfigResource
 
 mod = Blueprint('topic', __name__, url_prefix='/api/topics')
 
-admin_client = AdminClient({'bootstrap.servers': 'test-kafka1-01.hw.tanjingmama.cn:9092'})
+admin_client = AdminClient({'bootstrap.servers': ''})
 
 @mod.route('/detail', methods=['GET'])
 def get_topic_details():
