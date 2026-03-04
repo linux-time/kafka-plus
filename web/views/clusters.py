@@ -18,3 +18,16 @@ def create_cluster():
     db.session.add(new_cluster)
     db.session.commit()
     return jsonify({"status": "success", "message": "Cluster created successfully.", "cluster_id": new_cluster.id}), 201
+
+@mod.route('/', methods=['GET'])
+def get_cluster():
+    clusters_table = clusters.query.all()
+    cluster_list = []
+    for cluster in clusters_table:
+        cluster_list.append({
+            "id": cluster.id,
+            "cluster_name": cluster.cluster_name,
+            "bootstrap_servers": cluster.bootstrap_servers,
+            "remarks": cluster.remarks
+        })
+    return jsonify({"status": "success", "clusters": cluster_list}), 200
