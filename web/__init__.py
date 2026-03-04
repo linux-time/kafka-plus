@@ -1,4 +1,3 @@
-import os
 import fcntl
 
 from flask import Flask
@@ -7,13 +6,13 @@ from web.extensions import  db
 from web.task import scheduler
 from web.config import config
 #from web.database import User
-#from flask_migrate import Migrate
+from flask_migrate import Migrate
 #from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 #app.jinja_env.variable_start_string = '[['
 #app.jinja_env.variable_end_string = ']]'
-#migrate = Migrate()
+migrate = Migrate()
 
 
 #app.config['SQLALCHEMY_DATABASE_URI'] = config.db_file
@@ -28,7 +27,7 @@ from web.views import clusters
 
 def register_extensions(app):
     db.init_app(app)
-    #migrate.init_app(app, db)
+    migrate.init_app(app, db)
 
 def scheduler_init(app):
     lock_file = '/tmp/scheduler.lock'  # 锁文件路径
