@@ -29,6 +29,15 @@ class topic_info(db.Model):
     status = db.Column(db.Integer)
     remarks = db.Column(db.String(255))
 
+class topic_size(db.Model):
+    __tablename__ = 'tmp_data'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    cluster_id = db.Column(db.Integer)
+    topic_name = db.Column(db.String(255))
+    partition_id = db.Column(db.Integer)
+    partition_size = db.Column(db.Integer)
+    updated_at = db.Column(db.Integer, default=0)
+
 class tmp_data(db.Model):
     __tablename__ = 'tmp_data'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
