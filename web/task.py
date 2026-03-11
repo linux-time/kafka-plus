@@ -4,8 +4,8 @@ from flask_apscheduler import APScheduler
 from web.extensions import db
 from web.database import topic_info, clusters, topic_size
 from sqlalchemy import and_
-
 from kafka import KafkaAdminClient
+from confluent_kafka.admin import AdminClient, ConfigResource
 
 scheduler = APScheduler()
 
@@ -24,8 +24,8 @@ def get_topic_size(cluster_address):
 def job1():
     print("定时任务1执行中...")
 
-@scheduler.task('interval', id='job_get_topic_info', seconds=5)
-def get_topic_info():
+@scheduler.task('interval', id='job_get_partitions_size', seconds=5)
+def get_partitions_size():
     print("定时任务2执行中，获取 topic 信息...")
     from web import app
     with app.app_context():
@@ -58,3 +58,55 @@ def get_topic_info():
                             )
                             db.session.add(new_topic_size)
                         db.session.commit()
+
+@scheduler.task('interval', id='job_write_topic_partitions_size', seconds=6)
+def write_topic_partitions_size():
+    from web import app
+    with app.app_context():
+        topic_info_table = topic_info.query.all()
+        for topic in topic_info_table:
+            topic_size_table = topic_size.query.filter(and_(
+                topic_size.cluster_id == topic.cluster_id,
+                topic_size.topic_name == topic.topic_name
+                #topic_size.updated_at <= time.time() - 3600
+            )).all()
+            if topic_size_table:
+                size_sum = 0
+                for topic_size_item in topic_size_table:
+                    size_sum += topic_size_item.partition_size
+                topic.disk_usage_bytes = size_sum
+                topic.updated_at = int(time.time())
+                db.session.commit()
+
+@scheduler.task('interval', id='job_get_topic_info', seconds=7)
+def get_topic_info():
+    from web import app
+    with app.app_context():
+        clusters_table = clusters.query.all()
+        for cluster in clusters_table:
+            admin_client = AdminClient({'bootstrap.servers': cluster.bootstrap_servers})
+            metadata = admin_client.list_topics(timeout=10)
+
+            for name, topic in metadata.topics.items():
+                # 获取副本数（取第一个分区的副本列表长度）
+                replication_factor = len(topic.partitions[0].replicas) if topic.partitions else 0
+                topic_info_table = topic_info.query.filter(and_(
+                    topic_info.cluster_id == cluster.id,
+                    topic_info.topic_name == name
+                )).first()
+                if topic_info_table:
+                    topic_info_table.partitions = len(topic.partitions)
+                    topic_info_table.replication_factor = replication_factor
+                    topic_info_table.updated_at = int(time.time())
+                else:
+                    new_topic_info = topic_info(
+                        cluster_id=cluster.id,
+                        topic_name=name,
+                        partitions=len(topic.partitions),
+                        replication_factor=replication_factor,
+                        created_at=int(time.time()),
+                        updated_at=int(time.time()),
+                        status=1
+                    )
+                    db.session.add(new_topic_info)
+                db.session.commit()
