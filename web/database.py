@@ -30,7 +30,7 @@ class topic_info(db.Model):
     remarks = db.Column(db.String(255))
 
 class topic_size(db.Model):
-    __tablename__ = 'tmp_data'
+    __tablename__ = 'topic_size'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     cluster_id = db.Column(db.Integer)
     topic_name = db.Column(db.String(255))
