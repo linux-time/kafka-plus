@@ -26,7 +26,7 @@ class topic_info(db.Model):
     retention_ms = db.Column(db.Integer)
     created_at = db.Column(db.Integer, default=0)
     updated_at = db.Column(db.Integer, default=0)
-    status = db.Column(db.Integer)
+    status = db.Column(db.Integer) # 1: 正常, 2: 已从kafka物理删除
     remarks = db.Column(db.String(255))
 
 class topic_size(db.Model):
