@@ -13,15 +13,15 @@ from confluent_kafka.admin import AdminClient, ConfigResource
 
 scheduler = APScheduler()
 
-@scheduler.task('interval', id='job_test', seconds=5)
+@scheduler.task('interval', id='job_test', seconds=20)
 def job1():
     print("定时任务1执行中...")
 
-@scheduler.task('interval', id='job_test2', seconds=5)
+@scheduler.task('interval', id='job_test2', seconds=20)
 def job2():
     print("定时任务2执行中...")
 
-@scheduler.task('interval', id='get_topic_list', seconds=10)
+@scheduler.task('interval', id='get_topic_list', seconds=60)
 def get_topic_list():
     from web import app
     with app.app_context(): 
@@ -84,7 +84,7 @@ def get_topic_list():
                 print(f"同步集群 {cluster.cluster_name} 失败: {str(e)}")
 
 
-@scheduler.task('interval', id='get_topic_size', seconds=12)
+@scheduler.task('interval', id='get_topic_size', seconds=60)
 def get_topic_size():
     from web import app
     with app.app_context():
@@ -138,3 +138,32 @@ def get_topic_size():
             except Exception as e:
                 db.session.rollback()
                 print(f"集群 {cluster.cluster_name} 容量同步异常: {str(e)}")
+
+@scheduler.task('interval', id='get_consumer_groups', seconds=5)
+def get_consumer_groups():
+    from web import app
+    with app.app_context():
+        all_clusters = clusters.query.all()
+        for cluster in all_clusters:
+            try:
+                client = AdminClient({'bootstrap.servers': cluster.bootstrap_servers})
+                consumer_groups = client.list_consumer_groups(request_timeout=20)
+                group_names = [g.group_id for g in consumer_groups.result(timeout=2).valid]
+            except Exception as e:
+                print(f"集群 {cluster.cluster_name} 获取消费组异常: {str(e)}")
+                group_names = []
+
+            describe_future = client.describe_consumer_groups(group_names, request_timeout=20)
+
+            topic_to_groups = {}
+            for group_name, future in describe_future.items():
+                try:
+                    group_desc = future.result(timeout=2)
+                    for member in group_desc.members:
+                        #print(f"消费组 {group_name} 成员: {member.member_id}, 客户端ID: {member.client_id}, 主机: {member.host}, 订阅: {member.assignment.topic_partitions}")
+                        if member.assignment.topic_partitions:
+                            for tp in member.assignment.topic_partitions:
+                                topic_to_groups.setdefault(tp.topic, set()).add(group_name)
+                except Exception as e:
+                    print(f"消费组 {group_name} 描述异常: {str(e)}")
+            print(topic_to_groups)
