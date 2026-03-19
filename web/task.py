@@ -167,3 +167,18 @@ def get_consumer_groups():
                 except Exception as e:
                     print(f"消费组 {group_name} 描述异常: {str(e)}")
             print(topic_to_groups)
+
+            # 2. 批量获取数据库现有的 Topic
+            existing_topics_query = topic_info.query.filter_by(cluster_id=cluster.id).all()
+            # 创建一个映射字典方便快速查找对象
+            db_topic_map = {t.topic_name: t for t in existing_topics_query}
+            db_topic_names = set(db_topic_map.keys())
+
+            for topic_name in db_topic_names:
+                if topic_name in topic_to_groups:
+                    groups_str = ",".join(topic_to_groups[topic_name])
+                else:
+                    groups_str = ""
+                db_topic_map[topic_name].consumer_groups = groups_str
+                db_topic_map[topic_name].updated_at = int(time.time())
+            db.session.commit()
