@@ -29,6 +29,18 @@ class topic_info(db.Model):
     status = db.Column(db.Integer) # 1: 正常, 2: 已从kafka物理删除
     remarks = db.Column(db.String(255))
 
+class consumers_groups_info(db.Model):
+    __tablename__ = 'consumers_groups_info'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    topic_name = db.Column(db.String(255))
+    partition = db.Column(db.Integer)
+    cluster_id = db.Column(db.Integer)
+    consumer_groups = db.Column(db.String(255))
+    member_id = db.Column(db.String(255))
+    client_id = db.Column(db.String(255))
+    host = db.Column(db.String(255))
+    updated_at = db.Column(db.Integer, default=0)
+
 class topic_size(db.Model):
     __tablename__ = 'topic_size'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)

@@ -6,7 +6,7 @@ import requests
 from flask_apscheduler import APScheduler
 from web.config import config
 from web.extensions import db
-from web.database import topic_info, clusters, topic_size
+from web.database import topic_info, clusters, topic_size, consumers_groups_info
 from sqlalchemy import and_
 #from kafka import KafkaAdminClient
 from confluent_kafka.admin import AdminClient, ConfigResource
@@ -139,46 +139,95 @@ def get_topic_size():
                 db.session.rollback()
                 print(f"集群 {cluster.cluster_name} 容量同步异常: {str(e)}")
 
-@scheduler.task('interval', id='get_consumer_groups', seconds=5)
+@scheduler.task('interval', id='get_consumer_groups', seconds=15)
 def get_consumer_groups():
     from web import app
     with app.app_context():
         all_clusters = clusters.query.all()
+        now_ts = int(time.time())
+
         for cluster in all_clusters:
             try:
+                # 1. 快速获取所有消费组 ID
                 client = AdminClient({'bootstrap.servers': cluster.bootstrap_servers})
-                consumer_groups = client.list_consumer_groups(request_timeout=20)
-                group_names = [g.group_id for g in consumer_groups.result(timeout=2).valid]
+                # 设置略长的超时，确保大规模集群能返回
+                cg_future = client.list_consumer_groups(request_timeout=5)
+                group_names = [g.group_id for g in cg_future.result(timeout=5).valid]
+                
+                if not group_names:
+                    continue
+
+                # 2. 批量描述消费组
+                describe_future = client.describe_consumer_groups(group_names, request_timeout=5)
+                
+                topic_to_groups = {}  # 用于更新 topic_info 表: {topic: set(groups)}
+                current_assignments = [] # 用于更新 consumers_groups_info 表
+
+                for group_name, future in describe_future.items():
+                    try:
+                        group_desc = future.result(timeout=5)
+                        for member in group_desc.members:
+                            if member.assignment and member.assignment.topic_partitions:
+                                for tp in member.assignment.topic_partitions:
+                                    # 汇总 Topic 对应的消费组
+                                    topic_to_groups.setdefault(tp.topic, set()).add(group_name)
+                                    # 汇总成员详情
+                                    current_assignments.append({
+                                        "topic_name": tp.topic,
+                                        "partition": tp.partition,
+                                        "cluster_id": cluster.id,
+                                        "consumer_groups": group_name,
+                                        "member_id": member.member_id,
+                                        "client_id": member.client_id,
+                                        "host": member.host,
+                                    })
+                    except Exception as e:
+                        print(f"消费组 {group_name} 描述异常: {e}")
+
+                # --- 数据库操作优化阶段 ---
+
+                # 3. 优化 topic_info 表更新 (批量操作)
+                db_topics = topic_info.query.filter_by(cluster_id=cluster.id).all()
+                for t in db_topics:
+                    new_groups_str = ",".join(topic_to_groups.get(t.topic_name, []))
+                    if t.consumer_groups != new_groups_str: # 仅当内容变化时更新
+                        t.consumer_groups = new_groups_str
+                        t.updated_at = now_ts
+
+                # 4. 优化 consumers_groups_info 表更新 (关键性能点)
+                # 一次性读入现有记录，构建复合主键映射: {(topic, partition, group): object}
+                existing_cgit = consumers_groups_info.query.filter_by(cluster_id=cluster.id).all()
+                cgit_map = { (c.topic_name, c.partition, c.consumer_groups): c for c in existing_cgit }
+                
+                processed_keys = set()
+                for item in current_assignments:
+                    key = (item['topic_name'], item['partition'], item['consumer_groups'])
+                    processed_keys.add(key)
+                    
+                    if key in cgit_map:
+                        # 已存在，更新字段
+                        target = cgit_map[key]
+                        target.member_id = item['member_id']
+                        target.client_id = item['client_id']
+                        target.host = item['host']
+                        target.updated_at = now_ts
+                    else:
+                        # 不存在，新增记录
+                        new_c = consumers_groups_info(
+                            **item,
+                            updated_at=now_ts
+                        )
+                        db.session.add(new_c)
+
+                # 5. 可选：清理数据库中已经不存在的分配关系 (Kafka侧已消失的)
+                # for key, obj in cgit_map.items():
+                #     if key not in processed_keys:
+                #         db.session.delete(obj)
+
+                # 6. 一个集群处理完，统一 Commit
+                db.session.commit()
+                print(f"集群 {cluster.cluster_name} 同步完成，处理记录: {len(current_assignments)}")
+
             except Exception as e:
-                print(f"集群 {cluster.cluster_name} 获取消费组异常: {str(e)}")
-                group_names = []
-
-            describe_future = client.describe_consumer_groups(group_names, request_timeout=20)
-
-            topic_to_groups = {}
-            for group_name, future in describe_future.items():
-                try:
-                    group_desc = future.result(timeout=2)
-                    for member in group_desc.members:
-                        #print(f"消费组 {group_name} 成员: {member.member_id}, 客户端ID: {member.client_id}, 主机: {member.host}, 订阅: {member.assignment.topic_partitions}")
-                        if member.assignment.topic_partitions:
-                            for tp in member.assignment.topic_partitions:
-                                topic_to_groups.setdefault(tp.topic, set()).add(group_name)
-                except Exception as e:
-                    print(f"消费组 {group_name} 描述异常: {str(e)}")
-            print(topic_to_groups)
-
-            # 2. 批量获取数据库现有的 Topic
-            existing_topics_query = topic_info.query.filter_by(cluster_id=cluster.id).all()
-            # 创建一个映射字典方便快速查找对象
-            db_topic_map = {t.topic_name: t for t in existing_topics_query}
-            db_topic_names = set(db_topic_map.keys())
-
-            for topic_name in db_topic_names:
-                if topic_name in topic_to_groups:
-                    groups_str = ",".join(topic_to_groups[topic_name])
-                else:
-                    groups_str = ""
-                db_topic_map[topic_name].consumer_groups = groups_str
-                db_topic_map[topic_name].updated_at = int(time.time())
-            db.session.commit()
+                db.session.rollback()
+                print(f"集群 {cluster.cluster_name} 全局异常: {str(e)}")
