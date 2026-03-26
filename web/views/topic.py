@@ -6,12 +6,24 @@ from web.database import topic_info, clusters, topic_size
 
 mod = Blueprint('topic', __name__, url_prefix='/api/topics')
 
-@mod.route('/detail1', methods=['GET'])
+@mod.route('/detail', methods=['GET'])
 def get_topic_details():
-    topic_info_table = topic_info.query.filter_by(cluster_id=1).all()
-    res_list = []
-    for i in topic_info_table:
-        res_list.append({
+    cluster_id = request.args.get('cluster_id', None)
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 30, type=int)
+
+    topic_info_table = topic_info.query.filter_by(cluster_id=cluster_id).paginate(
+        page=page, per_page=per_page, error_out=False)
+
+    pagination = {
+        "total": topic_info_table.total,
+        "pages": topic_info_table.pages,
+        "has_next": topic_info_table.has_next,
+        "data": []
+    } 
+    
+    for i in topic_info_table.items:
+        pagination['data'].append({
             "id": i.id,
             "cluster_id": i.cluster_id,
             "topic_name": i.topic_name,
@@ -25,4 +37,4 @@ def get_topic_details():
             "status": i.status,
             "remarks": i.remarks
         })
-    return jsonify({"status": "success", "topics": res_list}), 200
+    return jsonify(pagination), 200
