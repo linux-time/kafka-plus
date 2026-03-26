@@ -10,6 +10,7 @@ from web.database import topic_info, clusters, topic_size, consumers_groups_info
 from sqlalchemy import and_
 #from kafka import KafkaAdminClient
 from confluent_kafka.admin import AdminClient, ConfigResource
+from concurrent.futures import ThreadPoolExecutor
 
 scheduler = APScheduler()
 
@@ -139,7 +140,7 @@ def get_topic_size():
                 db.session.rollback()
                 print(f"集群 {cluster.cluster_name} 容量同步异常: {str(e)}")
 
-@scheduler.task('interval', id='get_consumer_groups', seconds=15)
+@scheduler.task('interval', id='get_consumer_groups', seconds=60)
 def get_consumer_groups():
     from web import app
     with app.app_context():
@@ -231,3 +232,74 @@ def get_consumer_groups():
             except Exception as e:
                 db.session.rollback()
                 print(f"集群 {cluster.cluster_name} 全局异常: {str(e)}")
+# 全局 Client 缓存
+admin_clients_cache = {}
+
+def get_client(bootstrap_servers):
+    if bootstrap_servers not in admin_clients_cache:
+        # 设置 socket 超时，防止挂起的连接拖慢整个循环
+        admin_clients_cache[bootstrap_servers] = AdminClient({
+            'bootstrap.servers': bootstrap_servers,
+            'socket.timeout.ms': 5000,
+            'request.timeout.ms': 5000
+        })
+    return admin_clients_cache[bootstrap_servers]
+
+@scheduler.task('interval', id='get_topic_configs', seconds=10) # 建议频率不宜太高
+def get_topic_configs():
+    from web import app, db
+    with app.app_context():
+        all_clusters = clusters.query.all()
+        current_time = int(time.time())
+        
+        # 用于存放待更新的映射数据
+        update_mappings = []
+
+        for cluster in all_clusters:
+            try:
+                client = get_client(cluster.bootstrap_servers)
+                
+                # 1. 查出该集群数据库中记录的 Topic 信息
+                # 建立 topic_name -> id 的映射，方便后续匹配更新
+                topic_records = topic_info.query.filter(
+                    and_(topic_info.cluster_id == cluster.id, topic_info.status == 1)
+                ).all()
+                
+                if not topic_records:
+                    continue
+                
+                name_to_id = {t.topic_name: t.id for t in topic_records}
+                resources = [ConfigResource('TOPIC', name) for name in name_to_id.keys()]
+                
+                # 2. 批量发起请求
+                fs = client.describe_configs(resources, request_timeout=5)
+                
+                # 3. 解析结果并存入待更新列表
+                for res_obj, f in fs.items():
+                    try:
+                        configs = f.result(timeout=5)
+                        retention = configs.get('retention.ms')
+                        
+                        if retention and retention.value is not None:
+                            # 准备批量更新的数据字典
+                            update_mappings.append({
+                                'id': name_to_id[res_obj.name], # 主键 ID，必须提供
+                                'retention_ms': int(retention.value),
+                                'updated_at': current_time
+                            })
+                    except Exception as e:
+                        print(f"Topic {res_obj.name} 配置解析失败: {e}")
+                        
+            except Exception as e:
+                print(f"集群 {cluster.cluster_name} 连接失败: {e}")
+
+        # 4. 批量写入数据库 (在所有集群处理完后执行一次)
+        if update_mappings:
+            try:
+                # 使用 bulk_update_mappings，SQLAlchemy 会生成高效的批量 UPDATE 语句
+                db.session.bulk_update_mappings(topic_info, update_mappings)
+                db.session.commit()
+                print(f"成功同步 {len(update_mappings)} 条 Topic 配置到数据库")
+            except Exception as e:
+                db.session.rollback()
+                print(f"数据库批量更新异常: {e}")
