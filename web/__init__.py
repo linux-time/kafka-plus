@@ -26,6 +26,7 @@ app.config['SCHEDULER_API_ENABLED'] = False
 from web.views import topic
 from web.views import clusters
 from web.views import tasks
+from web.views import consumer
 
 def register_extensions(app):
     db.init_app(app)
@@ -70,6 +71,7 @@ def register_blueprints(app):
     app.register_blueprint(topic.mod)
     app.register_blueprint(clusters.mod)
     app.register_blueprint(tasks.mod)
+    app.register_blueprint(consumer.mod)
 
 register_extensions(app)
 register_blueprints(app)
