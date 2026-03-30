@@ -48,8 +48,8 @@ def output_topic_data():
     data_list = []
 
     for i in topic_info_table:
-        cluster_name = next((c.cluster_name for c in clusters_table if c.id == i.cluster_id), "Unknown Cluster")
-        consumer_groups = next((cg.consumer_groups for cg in consumer_groups_info_table if cg.cluster_id == i.cluster_id and cg.topic_name == i.topic_name), "Unknown Consumer Groups")
+        cluster_name = next((c.cluster_name for c in clusters_table if c.id == i.cluster_id), "")
+        consumer_groups = next((cg.consumer_groups for cg in consumer_groups_info_table if cg.cluster_id == i.cluster_id and cg.topic_name == i.topic_name), "")
 
         data_list.append({
             "id": i.id,
